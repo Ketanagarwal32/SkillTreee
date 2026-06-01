@@ -66,7 +66,7 @@ export default function TempleCenter() {
       {messages.length === 0 && (
         <div className="flex flex-col items-center justify-center text-center mt-16">
           <h1 className="heading-font text-[6rem] leading-none text-[#2f281f]">
-            Hello {localStorage.getItem("username")}
+            Hello {localStorage.getItem("username") || "Wanderer"}
           </h1>
           <p className="mt-10 text-4xl text-[#6d604d] leading-relaxed max-w-[900px]">
             What made you look for yourself today?

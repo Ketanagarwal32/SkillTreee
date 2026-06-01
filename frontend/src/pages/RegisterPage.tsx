@@ -49,6 +49,15 @@ export default function RegisterPage() {
         token
       );
 
+      const user =
+        response.data.data?.user ||
+        response.data.user;
+
+      localStorage.setItem(
+        "username",
+        user.username
+      );
+
       navigate("/dashboard");
 
     } catch (err: any) {
