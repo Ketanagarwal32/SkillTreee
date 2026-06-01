@@ -31,16 +31,18 @@ Always respond in valid JSON only. No markdown. No preamble.`;
 function parseGroqResponse(rawText: string): GroqAttributeResponse {
   let cleaned = rawText.trim();
 
-  console.log("GROQ RAW RESPONSE:", cleaned); // 👈 DEBUG
-
   if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
   else if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
   if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length - 3);
   cleaned = cleaned.trim();
 
+  // Fix literal newlines inside JSON string values (Groq sometimes breaks these across lines)
+  cleaned = cleaned.replace(/:\s*"([\s\S]*?)"/g, (_match, p1) => {
+    return ': "' + p1.replace(/\n/g, ' ').replace(/\r/g, '').trim() + '"';
+  });
+
   try {
     const parsed = JSON.parse(cleaned);
-    console.log("GROQ PARSED OK:", JSON.stringify(parsed)); // 👈 DEBUG
     return {
       emotional_theme: typeof parsed.emotional_theme === "string"
         ? parsed.emotional_theme
@@ -57,12 +59,10 @@ function parseGroqResponse(rawText: string): GroqAttributeResponse {
         : []
     };
   } catch {
-    console.log("GROQ JSON PARSE FAILED, trying regex fallback"); // 👈 DEBUG
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
         const fallback = JSON.parse(jsonMatch[0]);
-        console.log("GROQ REGEX FALLBACK OK:", JSON.stringify(fallback)); // 👈 DEBUG
         return {
           emotional_theme: fallback.emotional_theme ?? "stillness",
           memory_summary: fallback.memory_summary ?? "A quiet moment, stored but unreflected.",
@@ -73,7 +73,6 @@ function parseGroqResponse(rawText: string): GroqAttributeResponse {
       } catch {}
     }
 
-    console.log("GROQ TOTAL PARSE FAILURE — using last resort fallback"); // 👈 DEBUG
     return {
       emotional_theme: "stillness",
       memory_summary: "The emotional essence of this entry dissolved before it could be transcribed.",
@@ -108,9 +107,7 @@ async function callGroq(prompt: string): Promise<string> {
     }
   );
 
-  const content = response.data?.choices?.[0]?.message?.content ?? "";
-  console.log("GROQ API RAW CONTENT:", content); // 👈 DEBUG
-  return content;
+  return response.data?.choices?.[0]?.message?.content ?? "";
 }
 
 // ─── Main Functions ───────────────────────────────────────────────────────────
@@ -148,7 +145,7 @@ Rules:
     const raw = await callGroq(prompt);
     return parseGroqResponse(raw);
   } catch (error: any) {
-    console.error("GROQ ANALYSIS FAILED:", error.response?.data || error.message); // 👈 DEBUG
+    console.error("GROQ ANALYSIS FAILED:", error.response?.data || error.message);
     return {
       emotional_theme: "stillness",
       memory_summary: "A quiet entry, stored without analysis.",
