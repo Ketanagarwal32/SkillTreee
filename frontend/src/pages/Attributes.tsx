@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { API_URL } from "../config";
 
 interface AttributeHistory {
   id: string;
@@ -32,7 +33,7 @@ export default function Attributes() {
     const fetchAttributes = async () => {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get("http://localhost:5000/attributes", {
+        const response = await axios.get(`${API_URL}/attributes`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setAttributes(response.data.data.attributes);

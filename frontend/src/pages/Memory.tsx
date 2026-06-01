@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { API_URL } from "../config";
 
 interface Memory {
   id: string;
@@ -17,7 +18,7 @@ export default function Memory() {
     const fetchMemories = async () => {
       try {
         const token = localStorage.getItem("token");
-        const response = await axios.get("http://localhost:5000/memories", {
+        const response = await axios.get(`${API_URL}/memories`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setMemories(response.data.data);

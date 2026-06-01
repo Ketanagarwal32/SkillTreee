@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { API_URL } from "../config";
 
 export default function Sidebar() {
   const navigate = useNavigate();
@@ -12,7 +13,7 @@ export default function Sidebar() {
     if (!token) return;
 
     // Fetch primary attribute
-    axios.get("http://localhost:5000/attributes", {
+    axios.get(`${API_URL}/attributes`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then((res) => {
       const primary = res.data.data.primaryAttribute;
@@ -20,7 +21,7 @@ export default function Sidebar() {
     }).catch(() => {});
 
     // Fetch active arc
-    axios.get("http://localhost:5000/arcs", {
+    axios.get(`${API_URL}/arcs`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then((res) => {
       const arcs = res.data.data;

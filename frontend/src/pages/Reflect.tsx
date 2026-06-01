@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
+import { API_URL } from "../config";
 
 interface LatestReflection {
   reflectionParagraph: string | null;
@@ -17,7 +18,7 @@ export default function Reflect() {
         const token = localStorage.getItem("token");
 
         const response = await axios.get(
-          "http://localhost:5000/reflections/latest",
+          `${API_URL}/reflections/latest`,
           {
             headers: {
               Authorization: `Bearer ${token}`,

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import { API_URL } from "../config";
 
 interface Message {
   type: "user" | "ai";
@@ -34,7 +35,7 @@ export default function TempleCenter() {
       const token = localStorage.getItem("token");
 
       const response = await axios.post(
-        "http://localhost:5000/reflections",
+        `${API_URL}/reflections`,
         { text: input },
         { headers: { Authorization: `Bearer ${token}` } }
       );
