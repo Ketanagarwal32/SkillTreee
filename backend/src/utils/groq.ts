@@ -31,6 +31,8 @@ Always respond in valid JSON only. No markdown. No preamble.`;
 function parseGroqResponse(rawText: string): GroqAttributeResponse {
   let cleaned = rawText.trim();
 
+  console.log("GROQ RAW RESPONSE:", cleaned); // 👈 DEBUG
+
   if (cleaned.startsWith("```json")) cleaned = cleaned.substring(7);
   else if (cleaned.startsWith("```")) cleaned = cleaned.substring(3);
   if (cleaned.endsWith("```")) cleaned = cleaned.substring(0, cleaned.length - 3);
@@ -38,6 +40,7 @@ function parseGroqResponse(rawText: string): GroqAttributeResponse {
 
   try {
     const parsed = JSON.parse(cleaned);
+    console.log("GROQ PARSED OK:", JSON.stringify(parsed)); // 👈 DEBUG
     return {
       emotional_theme: typeof parsed.emotional_theme === "string"
         ? parsed.emotional_theme
@@ -54,11 +57,12 @@ function parseGroqResponse(rawText: string): GroqAttributeResponse {
         : []
     };
   } catch {
-    // Regex fallback for JSON block
+    console.log("GROQ JSON PARSE FAILED, trying regex fallback"); // 👈 DEBUG
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       try {
         const fallback = JSON.parse(jsonMatch[0]);
+        console.log("GROQ REGEX FALLBACK OK:", JSON.stringify(fallback)); // 👈 DEBUG
         return {
           emotional_theme: fallback.emotional_theme ?? "stillness",
           memory_summary: fallback.memory_summary ?? "A quiet moment, stored but unreflected.",
@@ -69,6 +73,7 @@ function parseGroqResponse(rawText: string): GroqAttributeResponse {
       } catch {}
     }
 
+    console.log("GROQ TOTAL PARSE FAILURE — using last resort fallback"); // 👈 DEBUG
     return {
       emotional_theme: "stillness",
       memory_summary: "The emotional essence of this entry dissolved before it could be transcribed.",
@@ -103,15 +108,13 @@ async function callGroq(prompt: string): Promise<string> {
     }
   );
 
-  return response.data?.choices?.[0]?.message?.content ?? "";
+  const content = response.data?.choices?.[0]?.message?.content ?? "";
+  console.log("GROQ API RAW CONTENT:", content); // 👈 DEBUG
+  return content;
 }
 
 // ─── Main Functions ───────────────────────────────────────────────────────────
 
-/**
- * Groq handles attribute generation + memory summarization.
- * Called once per journal entry submission.
- */
 export async function triggerGroqAnalysis(
   rawText: string,
   existingAttributes: { name: string; points: number; status: string }[],
@@ -145,7 +148,7 @@ Rules:
     const raw = await callGroq(prompt);
     return parseGroqResponse(raw);
   } catch (error: any) {
-    console.error("Groq analysis failed:", error.response?.data || error.message);
+    console.error("GROQ ANALYSIS FAILED:", error.response?.data || error.message); // 👈 DEBUG
     return {
       emotional_theme: "stillness",
       memory_summary: "A quiet entry, stored without analysis.",
@@ -153,6 +156,7 @@ Rules:
     };
   }
 }
+
 export async function triggerGroqArcGeneration(
   memories: string[]
 ): Promise<{ title: string; description: string }> {
@@ -187,9 +191,7 @@ Respond in valid JSON only:
     return { title: "A New Arc", description: "" };
   }
 }
-/**
- * Groq aggregates multiple session summaries into a monthly arc summary.
- */
+
 export async function triggerGroqMonthlyAggregation(
   memories: string[],
   activeArcs: string[]
@@ -213,6 +215,7 @@ Return plain text only. No JSON.`;
     return "The month dissolves into standard silence. The patterns remain, unwritten.";
   }
 }
+
 export async function triggerGroqReflectionParagraph(
   rawText: string,
   emotionalTheme: string,
