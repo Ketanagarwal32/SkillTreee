@@ -54,7 +54,7 @@ export class JournalController {
   async getEntryById(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user?.id;
-      const { id } = req.params;
+      const id = req.params.id as string;
 
       if (!userId) {
         throw new AppError("Authentication required", 401);

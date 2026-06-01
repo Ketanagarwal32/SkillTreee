@@ -1,0 +1,20 @@
+[providers]
+providers = ["node"]
+
+[variables]
+NODE_ENV = "production"
+
+[phases.setup]
+nixPkgs = ["nodejs-20_x"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npx prisma generate", "npm run build"]
+
+[phases.release]
+cmds = ["npx prisma migrate deploy"]
+
+[start]
+cmd = "npm start"

@@ -10,9 +10,8 @@ export const getUserProfile =
       },
 
       include: {
-        tasks: true,
-        skills: true,
-        achievements: true
+        attributes: true,
+        arcs: true
       }
     });
   };

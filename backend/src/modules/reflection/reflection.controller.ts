@@ -134,7 +134,7 @@ export class ReflectionController {
     try {
 
       const userId = req.user?.id;
-      const id = req.params.id;
+      const id = req.params.id as string;
       if (!userId) {
         throw new AppError(
           "Authentication required.",

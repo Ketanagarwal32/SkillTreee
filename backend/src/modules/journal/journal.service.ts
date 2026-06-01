@@ -1,5 +1,6 @@
 import prisma from "../../config/db";
 import { triggerGeminiReflection } from "../../utils/gemini";
+import { triggerGroqAnalysis } from "../../utils/groq";
 import { AppError } from "../../middleware/errorHandler";
 import { AttributesService } from "../attributes/attributes.service";
 
@@ -43,20 +44,35 @@ export class JournalService {
       }
     });
 
-    // 4. Trigger Gemini AI Pipeline
-    const aiResponse = await triggerGeminiReflection(
-      rawText,
-      existingAttributes,
-      recentMemories,
-      activeArcs
-    );
+    // 4. Trigger Gemini AI Pipeline (Parallel Gemini + Groq calls)
+    const [geminiResult, groqResult] = await Promise.allSettled([
+      triggerGeminiReflection(rawText),
+      triggerGroqAnalysis(rawText, existingAttributes, recentMemories)
+    ]);
+
+    const buddhaReflection =
+      geminiResult.status === "fulfilled"
+        ? geminiResult.value.reflection
+        : "The mind moves, the observer records.";
+
+    const groqData =
+      groqResult.status === "fulfilled"
+        ? groqResult.value
+        : {
+            emotional_theme: "stillness",
+            memory_summary: "A quiet entry, stored without analysis.",
+            attribute_changes: []
+          };
+
+    if (geminiResult.status === "rejected") console.error("Gemini failed:", geminiResult.reason);
+    if (groqResult.status === "rejected") console.error("Groq failed:", groqResult.reason);
 
     // 5. Save Reflection Summary
     const reflection = await prisma.reflection.create({
       data: {
         entryId: journalEntry.id,
-        aiResponse: aiResponse.reflection,
-        emotionalTheme: aiResponse.emotional_theme
+        aiResponse: buddhaReflection,
+        emotionalTheme: groqData.emotional_theme
       }
     });
 
@@ -64,7 +80,7 @@ export class JournalService {
     const memory = await prisma.memory.create({
       data: {
         userId,
-        summary: aiResponse.memory_summary,
+        summary: groqData.memory_summary,
         periodStart: journalEntry.createdAt,
         periodEnd: journalEntry.createdAt
       }
@@ -72,7 +88,7 @@ export class JournalService {
 
     // 7. Update or Create Attributes dynamically
     const processedAttributeChanges = [];
-    for (const change of aiResponse.attribute_changes) {
+    for (const change of groqData.attribute_changes) {
       const { name, delta, reason } = change;
 
       // Skip invalid changes or zero changes
