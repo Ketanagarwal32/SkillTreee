@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import Reflect from "./pages/Reflect";
 import Memory from "./pages/Memory";
 import Attributes from "./pages/Attributes";
+import Arcs from "./pages/Arcs";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 
@@ -23,6 +24,7 @@ export default function AppRoutes() {
         <Route path="/reflect" element={<Reflect />} />
         <Route path="/memory" element={<Memory />} />
         <Route path="/attributes" element={<Attributes />} />
+        <Route path="/arcs" element={<Arcs />} />
       </Route>
     </Routes>
   );

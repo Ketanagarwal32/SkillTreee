@@ -3,14 +3,19 @@ import axios from "axios";
 import { API_URL } from "../config";
 
 interface LatestReflection {
-  reflectionParagraph: string | null;
-  emotionalTheme: string;
+  content: string;
   createdAt: string;
+}
+
+interface CurrentSession {
+  id: string;
 }
 
 export default function Reflect() {
   const [reflection, setReflection] = useState<LatestReflection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [requesting, setRequesting] = useState(false);
+  const [silenced, setSilenced] = useState(false);
 
   useEffect(() => {
     const fetchReflection = async () => {
@@ -18,7 +23,7 @@ export default function Reflect() {
         const token = localStorage.getItem("token");
 
         const response = await axios.get(
-          `${API_URL}/reflections/latest`,
+          `${API_URL}/reflection/`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -26,7 +31,9 @@ export default function Reflect() {
           }
         );
 
-        setReflection(response.data.data);
+        const reflections = response.data.data;
+        setReflection(Array.isArray(reflections) ? reflections[0] ?? null : null);
+        setSilenced(false);
       } catch (error) {
         console.error("Failed to fetch reflection:", error);
       } finally {
@@ -48,6 +55,49 @@ export default function Reflect() {
     });
   };
 
+  const requestReflection = async () => {
+    try {
+      setRequesting(true);
+      const token = localStorage.getItem("token");
+
+      const sessionResponse = await axios.get<{ data: CurrentSession }>(
+        `${API_URL}/session/current`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const sessionId = sessionResponse.data.data.id;
+
+      const response = await axios.post(
+        `${API_URL}/reflection/request`,
+        { sessionId },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const result = response.data.data;
+      setSilenced(result.silenced === true);
+      setReflection(
+        result.silenced
+          ? {
+              content: "The observer has nothing further to add to this session.",
+              createdAt: new Date().toISOString(),
+            }
+          : result.reflection
+      );
+    } catch (error) {
+      console.error("Failed to request reflection:", error);
+    } finally {
+      setRequesting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-[#f5f1e8]">
@@ -58,7 +108,7 @@ export default function Reflect() {
     );
   }
 
-  if (!reflection || !reflection.reflectionParagraph) {
+  if (!reflection || !reflection.content) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center px-8 bg-[#f5f1e8]">
         <h2 className="heading-font text-3xl text-[#2f281f] mb-4">
@@ -66,9 +116,16 @@ export default function Reflect() {
         </h2>
 
         <p className="text-base text-[#8f816f] max-w-md leading-relaxed">
-          The observer is waiting. Write your first journal entry and it will
-          speak.
+          The observer is waiting. Write your session entries, then request a
+          reflection when you are ready.
         </p>
+        <button
+          onClick={requestReflection}
+          disabled={requesting}
+          className="mt-8 rounded-lg border border-[#d7cab6] px-5 py-3 text-sm text-[#5f5444] hover:text-[#2f281f] disabled:opacity-60"
+        >
+          {requesting ? "Requesting..." : "Request reflection"}
+        </button>
       </div>
     );
   }
@@ -85,19 +142,24 @@ export default function Reflect() {
 
         {/* MAIN REFLECTION */}
         <p className="heading-font text-[1.35rem] leading-[2.1] text-[#2f281f] whitespace-pre-line">
-          {reflection.reflectionParagraph}
+          {reflection.content}
         </p>
 
-        {/* FOOTER */}
+        {!silenced && (
+          <button
+            onClick={requestReflection}
+            disabled={requesting}
+            className="mt-8 rounded-lg border border-[#d7cab6] px-5 py-3 text-sm text-[#5f5444] hover:text-[#2f281f] disabled:opacity-60"
+          >
+            {requesting ? "Requesting..." : "Request new reflection"}
+          </button>
+        )}
+
         <div className="mt-10 flex items-center gap-4">
 
           <div className="h-[1px] flex-1 bg-[#d4c9b5]" />
 
           <div className="text-center">
-            <p className="text-xs text-[#a89880] italic">
-              {reflection.emotionalTheme}
-            </p>
-
             <p className="text-[10px] text-[#c4b8a5] mt-1">
               {formatDate(reflection.createdAt)}
             </p>

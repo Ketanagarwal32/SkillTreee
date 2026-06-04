@@ -12,15 +12,23 @@ export default function TempleCenter() {
   const [input, setInput] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem("chat_messages");
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
 
   useEffect(() => {
-    localStorage.setItem("chat_messages", JSON.stringify(messages));
-  }, [messages]);
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    axios.get(`${API_URL}/session/current`, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).then((res) => {
+      const entries = res.data.data?.entries ?? [];
+      const loaded: Message[] = entries.map((e: { rawText: string }) => ({
+        type: "user",
+        text: e.rawText
+      }));
+      setMessages(loaded);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -34,18 +42,13 @@ export default function TempleCenter() {
     try {
       const token = localStorage.getItem("token");
 
-      const response = await axios.post(
-        `${API_URL}/reflections`,
-        { text: input },
+      await axios.post(
+        `${API_URL}/journal`,
+        { rawText: input },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const aiMessage: Message = {
-        type: "ai",
-        text: response.data.data.ai.reflection,
-      };
-
-      setMessages((prev) => [...prev, userMessage, aiMessage]);
+      setMessages((prev) => [...prev, userMessage]);
 
     } catch (error) {
       console.log(error);

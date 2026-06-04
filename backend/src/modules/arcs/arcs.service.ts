@@ -1,8 +1,67 @@
 import prisma from "../../config/db";
 import { AppError } from "../../middleware/errorHandler";
+import { triggerGroqPrompt } from "../../utils/groq";
+
+function parseArcResponse(rawText: string): { title: string; description: string } {
+  const cleaned = rawText
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    return {
+      title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : "Unmarked Period",
+      description: typeof parsed.description === "string" ? parsed.description.trim() : ""
+    };
+  } catch {
+    return { title: "Unmarked Period", description: "" };
+  }
+}
+
+export async function checkArcGeneration(userId: string) {
+  const unassignedMemories = await prisma.memory.findMany({
+    where: { userId, arcId: null },
+    orderBy: { createdAt: "asc" }
+  });
+
+  if (unassignedMemories.length < 7) return;
+
+  const batch = unassignedMemories.slice(0, 7);
+  const combinedSummaries = batch.map((memory) => memory.summary).join("\n\n");
+
+  const prompt = `You are a quiet reflective archive. Based on the following memory summaries from someone's recent life period, generate a life arc. Title: 3-5 words, restrained and emotionally grounded. Description: 2-3 sentences, observational, not motivational. Avoid dramatic excess. Return JSON only with fields: title, description.
+
+Memories:
+${combinedSummaries}`;
+
+  const parsed = parseArcResponse(await triggerGroqPrompt(prompt));
+
+  await prisma.arc.updateMany({
+    where: { userId, isActive: true },
+    data: { isActive: false, endDate: new Date() }
+  });
+
+  const arc = await prisma.arc.create({
+    data: {
+      userId,
+      title: parsed.title,
+      description: parsed.description,
+      startDate: batch[0].periodStart,
+      endDate: batch[batch.length - 1].periodEnd,
+      isActive: true
+    }
+  });
+
+  await prisma.memory.updateMany({
+    where: { id: { in: batch.map((memory) => memory.id) } },
+    data: { arcId: arc.id }
+  });
+}
 
 export class ArcsService {
-
   async createArc(userId: string, title: string, description?: string, startDate?: Date, endDate?: Date) {
     if (!title || title.trim().length === 0) {
       throw new AppError("Arc title is required.", 400);
@@ -21,53 +80,19 @@ export class ArcsService {
   }
 
   async getArcs(userId: string) {
-    return prisma.arc.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" }
-    });
-  }
+      return prisma.arc.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          memories: {
+            orderBy: { createdAt: "asc" }
+          }
+        }
+      });
+    }
 
-  async checkAndGenerateArc(userId: string): Promise<void> {
-    const entryCount = await prisma.journalEntry.count({ where: { userId } });
-    console.log(`Arc check — entry count: ${entryCount}`);
-
-    // Trigger on every 7th entry
-    if (entryCount % 7 !== 0 || entryCount === 0) return;
-
-    // Get available memories — don't require exactly 7
-    const memories = await prisma.memory.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: 7,
-      select: { summary: true }
-    });
-
-    console.log(`Arc check — memories found: ${memories.length}`);
-
-    // Need at least 3 memories to generate a meaningful arc
-    if (memories.length < 3) return;
-
-    // Deactivate current active arc
-    await prisma.arc.updateMany({
-      where: { userId, isActive: true },
-      data: { isActive: false, endDate: new Date() }
-    });
-
-    // Generate new arc from Groq
-    const { triggerGroqArcGeneration } = await import("../../utils/groq");
-    const arcData = await triggerGroqArcGeneration(memories.map(m => m.summary));
-
-    await prisma.arc.create({
-      data: {
-        userId,
-        title: arcData.title,
-        description: arcData.description,
-        startDate: new Date(),
-        isActive: true
-      }
-    });
-
-    console.log(`New arc generated: ${arcData.title}`);
+  async checkArcGeneration(userId: string): Promise<void> {
+    await checkArcGeneration(userId);
   }
 
   async toggleArc(userId: string, arcId: string) {

@@ -1,121 +1,78 @@
 import prisma from "../../config/db";
 import { AppError } from "../../middleware/errorHandler";
+import { triggerGroqPrompt } from "../../utils/groq";
 
-export class AttributesService {
-  /**
-   * Scans a user's attributes and applies stagnation and decay rules.
-   * If an attribute has no positive/negative activity for 7+ days:
-   * - Status becomes "STAGNANT".
-   * - Automatically loses 1 point per day for each day it remains stagnant and unchecked.
-   */
-  async checkStagnantStatus(userId: string): Promise<void> {
-    const now = new Date();
-    const activeThresholdMs = 7 * 24 * 60 * 60 * 1000; // 7 days
-    const decayIntervalMs = 24 * 60 * 60 * 1000; // 1 day
+type SessionWithEntries = {
+  id: string;
+  userId: string;
+  entries: { rawText: string }[];
+};
 
-    // Get all attributes of the user
-    const attributes = await prisma.attribute.findMany({
-      where: { userId },
-      include: {
-        history: {
-          orderBy: { createdAt: "desc" },
-          take: 1
-        }
-      }
+type AttributeDelta = {
+  name: string;
+  delta: number;
+};
+
+function parseAttributeDeltas(rawText: string): AttributeDelta[] {
+  const cleaned = rawText
+    .trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((change) => ({
+        name: typeof change.name === "string" ? change.name.trim() : "",
+        delta: typeof change.delta === "number" ? Math.max(-2, Math.min(2, Math.trunc(change.delta))) : 0
+      }))
+      .filter((change) => change.name.length > 0 && change.delta !== 0)
+      .slice(0, 4);
+  } catch {
+    return [];
+  }
+}
+
+export async function evolveSessionAttributes(session: SessionWithEntries) {
+  const combinedText = session.entries.map((entry) => entry.rawText).join("\n\n");
+
+  const prompt = `You are an observational pattern-detection system. Based on the following journal entries from a single reflective period, identify behavioral and emotional tendencies that appeared. Return a JSON array of attribute changes. Each item: name (2-3 word psychological tendency, e.g. "Technical Resilience", "Avoidant Withdrawal"), delta (integer -2 to 2). Only include attributes with clear evidence. Maximum 4 attributes. Return JSON only, no explanation.
+
+Entries:
+${combinedText}`;
+
+  const aiResponse = await triggerGroqPrompt(prompt);
+  const parsed = parseAttributeDeltas(aiResponse);
+
+  for (const change of parsed) {
+    const { name, delta } = change;
+    if (!name || delta === 0) continue;
+
+    const attribute = await prisma.attribute.upsert({
+      where: { userId_name: { userId: session.userId, name } },
+      create: { userId: session.userId, name, value: Math.max(0, delta) },
+      update: { value: { increment: delta } }
     });
 
-    for (const attribute of attributes) {
-      // Find when the last active change (non-decay) happened
-      const lastActiveHistory = await prisma.attributeHistory.findFirst({
-        where: {
-          attributeId: attribute.id,
-          NOT: {
-            reason: {
-              contains: "Stagnation decay"
-            }
-          }
-        },
-        orderBy: { createdAt: "desc" }
-      });
-
-      const lastActiveDate = lastActiveHistory ? lastActiveHistory.createdAt : attribute.createdAt;
-      const msSinceLastActive = now.getTime() - lastActiveDate.getTime();
-
-      if (msSinceLastActive > activeThresholdMs) {
-        // This attribute is stagnant!
-        const isCurrentlyActive = attribute.status === "ACTIVE";
-
-        // Update status to STAGNANT if it was active
-        if (isCurrentlyActive) {
-          await prisma.attribute.update({
-            where: { id: attribute.id },
-            data: { status: "STAGNANT" }
-          });
-        }
-
-        // Apply decay: check when the last decay was recorded
-        const lastDecayHistory = await prisma.attributeHistory.findFirst({
-          where: {
-            attributeId: attribute.id,
-            reason: {
-              contains: "Stagnation decay"
-            }
-          },
-          orderBy: { createdAt: "desc" }
-        });
-
-        // We should start decaying from either:
-        // 1. The 7th day after last active history (when stagnation officially begins)
-        // 2. The last decay history date, if decay already started
-        const decayStartDate = lastDecayHistory 
-          ? lastDecayHistory.createdAt 
-          : new Date(lastActiveDate.getTime() + activeThresholdMs);
-
-        const msSinceLastDecay = now.getTime() - decayStartDate.getTime();
-        const daysToDecay = Math.floor(msSinceLastDecay / decayIntervalMs);
-
-        if (daysToDecay > 0 && attribute.points > 0) {
-          // Calculate new point value
-          const decayPoints = 1; // 1 point per day
-          const totalDecay = daysToDecay * decayPoints;
-          const newPoints = Math.max(0, attribute.points - totalDecay);
-          const actualDeducted = attribute.points - newPoints;
-
-          if (actualDeducted > 0) {
-            // Update points in DB
-            await prisma.attribute.update({
-              where: { id: attribute.id },
-              data: {
-                points: newPoints,
-                status: "STAGNANT"
-              }
-            });
-
-            // Write a history record representing the accumulated decay
-            await prisma.attributeHistory.create({
-              data: {
-                attributeId: attribute.id,
-                delta: -actualDeducted,
-                reason: `Stagnation decay: -${actualDeducted} points over ${daysToDecay} days`
-              }
-            });
-          }
-        }
+    await prisma.attributeHistory.create({
+      data: {
+        attributeId: attribute.id,
+        sessionId: session.id,
+        delta
       }
-    }
+    });
   }
+}
 
-  /**
-   * Gets all attributes for a user.
-   * Runs the stagnant check first to guarantee freshness.
-   */
+export class AttributesService {
   async getAttributes(userId: string) {
-    // Run the decay check
-    await this.checkStagnantStatus(userId);
-
     const attributes = await prisma.attribute.findMany({
       where: { userId },
-      orderBy: { points: "desc" },
+      orderBy: { value: "desc" },
       include: {
         history: {
           orderBy: { createdAt: "desc" },
@@ -124,18 +81,14 @@ export class AttributesService {
       }
     });
 
-    // Identify primary attribute (highest points)
     const primaryAttribute = attributes.length > 0 ? attributes[0] : null;
 
     return {
       attributes,
-      primaryAttribute: primaryAttribute ? { name: primaryAttribute.name, points: primaryAttribute.points } : null
+      primaryAttribute: primaryAttribute ? { name: primaryAttribute.name, value: primaryAttribute.value } : null
     };
   }
 
-  /**
-   * Fetches the detailed activity/delta history for a single attribute.
-   */
   async getAttributeHistory(userId: string, attributeId: string) {
     const attribute = await prisma.attribute.findFirst({
       where: { id: attributeId, userId },

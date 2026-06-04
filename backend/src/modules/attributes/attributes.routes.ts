@@ -9,7 +9,6 @@ const controller = new AttributesController();
 router.use(authenticate);
 
 router.get("/", (req, res, next) => controller.getAttributes(req, res, next));
-router.post("/stagnant-check", (req, res, next) => controller.triggerStagnantCheck(req, res, next));
 router.get("/:id/history", (req, res, next) => controller.getAttributeHistory(req, res, next));
 
 export default router;

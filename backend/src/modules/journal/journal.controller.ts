@@ -24,7 +24,7 @@ export class JournalController {
       }
 
       const result = await journalService.createEntry(userId, rawText);
-      successResponse(res, "Journal entry successfully processed and reflected upon.", result, 201);
+      successResponse(res, "Journal entry created successfully.", result, 201);
     } catch (error) {
       next(error);
     }

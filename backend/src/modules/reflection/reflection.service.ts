@@ -1,140 +1,84 @@
 import prisma from "../../config/db";
 import { AppError } from "../../middleware/errorHandler";
-import { triggerGeminiReflection } from "../../utils/gemini";
-import { triggerGroqAnalysis, triggerGroqReflectionParagraph } from "../../utils/groq";
-import { ArcsService } from "../arcs/arcs.service";
+import { triggerGroqPrompt } from "../../utils/groq";
+
+const REFLECTION_LIMIT_PER_SESSION = 3;
 
 export class ReflectionService {
-
-  async getReflections(userId: string) {
-    return prisma.reflection.findMany({
-      where: { entry: { userId } },
-      orderBy: { createdAt: "desc" },
-      include: { entry: { select: { rawText: true, createdAt: true } } }
-    });
-  }
-
-  async getReflectionById(userId: string, reflectionId: string) {
-    const reflection = await prisma.reflection.findFirst({
-      where: { id: reflectionId, entry: { userId } },
-      include: { entry: { select: { rawText: true, createdAt: true } } }
+  async requestReflection(userId: string, sessionId: string) {
+    const session = await prisma.session.findFirst({
+      where: { id: sessionId, userId },
+      include: { entries: true }
     });
 
-    if (!reflection) throw new AppError("Reflection not found.", 404);
-    return reflection;
-  }
+    if (!session) throw new AppError("Session not found.", 404);
 
-  async createReflection(userId: string, text: string) {
+    if (session.entries.length === 0) {
+      throw new AppError("No entries in this session to reflect on.", 400);
+    }
 
-    // 1. SAVE JOURNAL ENTRY
-    const entry = await prisma.journalEntry.create({
-      data: { userId, rawText: text }
-    });
+    if (session.reflectionCount >= REFLECTION_LIMIT_PER_SESSION) {
+      return {
+        silenced: true,
+        message: "The observer has nothing further to add to this session."
+      };
+    }
 
-    // 2. GET USER CONTEXT
-    const existingAttributes = await prisma.attribute.findMany({
-      where: { userId },
-      select: { name: true, points: true, status: true }
-    });
+    const combinedEntries = session.entries.map((entry) => entry.rawText).join("\n\n");
 
     const recentMemories = await prisma.memory.findMany({
       where: { userId },
-      take: 5,
       orderBy: { createdAt: "desc" },
+      take: 3,
       select: { summary: true }
     });
 
-    // 3. GEMINI + GROQ IN PARALLEL
-    const [geminiResult, groqResult] = await Promise.allSettled([
-      triggerGeminiReflection(text),
-      triggerGroqAnalysis(text, existingAttributes, recentMemories)
-    ]);
+    const activeArc = await prisma.arc.findFirst({
+      where: { userId, isActive: true },
+      select: { title: true, description: true }
+    });
 
-    const buddhaReflection =
-      geminiResult.status === "fulfilled"
-        ? geminiResult.value.reflection
-        : "The mind moves, the observer records.";
+    const memoryContext = recentMemories.length > 0
+      ? "Recent patterns:\n" + recentMemories.map((memory) => memory.summary).join("\n")
+      : "";
 
-    const groqData =
-      groqResult.status === "fulfilled"
-        ? groqResult.value
-        : {
-            emotional_theme: "stillness",
-            memory_summary: "A quiet entry, stored without analysis.",
-            attribute_changes: []
-          };
+    const arcContext = activeArc
+      ? `Current life arc: ${activeArc.title}. ${activeArc.description || ""}`
+      : "";
 
-    if (geminiResult.status === "rejected") console.error("Gemini failed:", geminiResult.reason);
-    if (groqResult.status === "rejected") console.error("Groq failed:", groqResult.reason);
+    const prompt = `You are a quiet, restrained observer. You have been watching someone's reflective writing over time.
 
-    // 4. SAVE REFLECTION
+${arcContext}
+${memoryContext}
+
+Today's entries:
+${combinedEntries}
+
+Offer one brief observation - 2-4 sentences. Do not explain this person to themselves with confidence. Do not coach or motivate. Do not offer solutions. Notice something that appears present without claiming to know what it means. Remain uncertain. Remain grounded. Do not begin with "I" or "You". Avoid therapeutic language.`;
+
+    const content = await triggerGroqPrompt(prompt);
+
+    await prisma.session.update({
+      where: { id: sessionId },
+      data: { reflectionCount: { increment: 1 } }
+    });
+
     const reflection = await prisma.reflection.create({
-      data: {
-        entryId: entry.id,
-        aiResponse: buddhaReflection,
-        emotionalTheme: groqData.emotional_theme
-      }
+      data: { userId, sessionId, content }
     });
 
-    // 4b. GENERATE REFLECTION PARAGRAPH
-    const reflectionParagraph = await triggerGroqReflectionParagraph(
-      text,
-      groqData.emotional_theme,
-      groqData.attribute_changes
-    );
+    return { silenced: false, reflection };
+  }
 
-    // Update reflection with paragraph
-    await prisma.reflection.update({
-      where: { id: reflection.id },
-      data: { reflectionParagraph }
-    });
-
-    // 5. SAVE MEMORY SUMMARY
-    await prisma.memory.create({
-      data: {
-        userId,
-        summary: groqData.memory_summary,
-        periodStart: new Date(),
-        periodEnd: new Date()
+  async getReflections(userId: string) {
+    return prisma.reflection.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        session: {
+          select: { date: true, entries: { select: { rawText: true } } }
+        }
       }
     });
-    const arcsService = new ArcsService();
-    await arcsService.checkAndGenerateArc(userId);
-
-    // 6. APPLY ATTRIBUTE CHANGES
-    for (const change of groqData.attribute_changes) {
-      const existingAttribute = await prisma.attribute.findFirst({
-        where: { userId, name: change.name }
-      });
-
-      if (existingAttribute) {
-        await prisma.attribute.update({
-          where: { id: existingAttribute.id },
-          data: { points: { increment: change.delta } }
-        });
-        await prisma.attributeHistory.create({
-          data: { attributeId: existingAttribute.id, delta: change.delta, reason: change.reason }
-        });
-      } else {
-        const createdAttribute = await prisma.attribute.create({
-          data: { userId, name: change.name, points: Math.max(change.delta, 1) }
-        });
-        await prisma.attributeHistory.create({
-          data: { attributeId: createdAttribute.id, delta: change.delta, reason: change.reason }
-        });
-      }
-    }
-
-    // 7. RETURN EVERYTHING
-    return {
-      entry,
-      reflection,
-      ai: {
-        reflection: buddhaReflection,
-        emotional_theme: groqData.emotional_theme,
-        memory_summary: groqData.memory_summary,
-        attribute_changes: groqData.attribute_changes
-      }
-    };
   }
 }

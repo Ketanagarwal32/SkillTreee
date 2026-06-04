@@ -26,7 +26,7 @@ export class AttributesController {
   }
 
   /**
-   * Get detailed points delta history for a specific attribute.
+   * Get detailed delta history for a specific attribute.
    */
   async getAttributeHistory(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
     try {
@@ -44,21 +44,4 @@ export class AttributesController {
     }
   }
 
-  /**
-   * Manually trigger a check on stagnant attributes and execute points decay.
-   */
-  async triggerStagnantCheck(req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const userId = req.user?.id;
-
-      if (!userId) {
-        throw new AppError("Authentication required.", 401);
-      }
-
-      await attributesService.checkStagnantStatus(userId);
-      successResponse(res, "Stagnation scans and decay applied successfully.", null, 200);
-    } catch (error) {
-      next(error);
-    }
-  }
 }

@@ -5,20 +5,11 @@ import { API_URL } from "../config";
 
 export default function Sidebar() {
   const navigate = useNavigate();
-  const [primaryAttribute, setPrimaryAttribute] = useState<string | null>(null);
   const [activeArc, setActiveArc] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-
-    // Fetch primary attribute
-    axios.get(`${API_URL}/attributes`, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).then((res) => {
-      const primary = res.data.data.primaryAttribute;
-      if (primary) setPrimaryAttribute(primary.name);
-    }).catch(() => {});
 
     // Fetch active arc
     axios.get(`${API_URL}/arcs`, {
@@ -40,9 +31,6 @@ export default function Sidebar() {
           <h1 className="heading-font text-[4.5rem] leading-none text-[#2f281f]">
             SkillTree
           </h1>
-          <p className="mt-3 text-sm tracking-[0.35em] uppercase text-[#7e715d]">
-            Inner Evolution
-          </p>
         </div>
 
         {/* PROFILE */}
@@ -62,15 +50,6 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* DOMINANT ATTRIBUTE */}
-        <div className="mt-5 px-10">
-          <div className="border-y border-[#c7baa7] py-4">
-            <p className="text-[#2f281f] text-lg">
-              {primaryAttribute ?? "—"}
-            </p>
-          </div>
-        </div>
-
         {/* NAVIGATION */}
         <div className="mt-5 px-10 space-y-4">
           <Link to="/dashboard" className="block text-left text-2xl heading-font text-[#2f281f]">
@@ -85,6 +64,9 @@ export default function Sidebar() {
           <Link to="/attributes" className="block text-left text-2xl heading-font text-[#7d715f] hover:text-[#2f281f] transition">
             Attributes
           </Link>
+          <Link to="/arcs" className="block text-left text-2xl heading-font text-[#7d715f] hover:text-[#2f281f] transition">
+            Arcs
+          </Link>
         </div>
 
       </div>
@@ -95,7 +77,6 @@ export default function Sidebar() {
           onClick={() => {
             localStorage.removeItem("token");
             localStorage.removeItem("username");
-            localStorage.removeItem("chat_messages");
             navigate("/");
           }}
           className="text-xs text-[#9a8d7a] hover:text-[#7a6d5b] transition mb-4 cursor-pointer"

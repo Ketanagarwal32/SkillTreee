@@ -7,6 +7,7 @@ import attributesRoutes from "./modules/attributes/attributes.routes";
 import memoryRoutes from "./modules/memory/memory.routes";
 import arcsRoutes from "./modules/arcs/arcs.routes";
 import reflectionRoutes from "./modules/reflection/reflection.routes";
+import sessionRoutes from "./modules/session/session.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 dotenv.config();
@@ -54,7 +55,8 @@ app.use("/journal", journalRoutes);
 app.use("/attributes", attributesRoutes);
 app.use("/memories", memoryRoutes);
 app.use("/arcs", arcsRoutes);
-app.use("/reflections", reflectionRoutes);
+app.use("/reflection", reflectionRoutes);
+app.use("/session", sessionRoutes);
 
 // Global Error Handling Middleware (must be registered last)
 app.use(errorHandler);

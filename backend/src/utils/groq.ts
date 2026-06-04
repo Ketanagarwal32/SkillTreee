@@ -110,11 +110,20 @@ async function callGroq(prompt: string): Promise<string> {
   return response.data?.choices?.[0]?.message?.content ?? "";
 }
 
+export async function triggerGroqPrompt(prompt: string): Promise<string> {
+  try {
+    return (await callGroq(prompt)).trim();
+  } catch (error: any) {
+    console.error("Groq prompt failed:", error.response?.data || error.message);
+    return "";
+  }
+}
+
 // ─── Main Functions ───────────────────────────────────────────────────────────
 
 export async function triggerGroqAnalysis(
   rawText: string,
-  existingAttributes: { name: string; points: number; status: string }[],
+  existingAttributes: { name: string; value: number }[],
   recentMemories: { summary: string }[]
 ): Promise<GroqAttributeResponse> {
   const prompt = `EXISTING USER ATTRIBUTES:
@@ -213,33 +222,3 @@ Return plain text only. No JSON.`;
   }
 }
 
-export async function triggerGroqReflectionParagraph(
-  rawText: string,
-  emotionalTheme: string,
-  attributeChanges: AttributeChange[]
-): Promise<string> {
-  const prompt = `You are a silent observer. You have watched this person for a long time.
-Write 2-3 sentences about who they are becoming based on this entry.
-Be specific. Be honest. Be brief.
-No poetry. No metaphors. No encouragement.
-Just sharp, clear observation. Like a monk who speaks rarely but precisely.
-Plain text only.
-
-JOURNAL ENTRY:
-"${rawText}"
-
-EMOTIONAL THEME: ${emotionalTheme}
-
-ATTRIBUTE SHIFTS:
-${JSON.stringify(attributeChanges)}
-
-Write the paragraph now. Plain text only.`;
-
-  try {
-    const raw = await callGroq(prompt);
-    return raw.trim() || "The session passed in silence. The observer noted, and said nothing.";
-  } catch (error: any) {
-    console.error("Groq reflection paragraph failed:", error.message);
-    return "The session passed in silence. The observer noted, and said nothing.";
-  }
-}
